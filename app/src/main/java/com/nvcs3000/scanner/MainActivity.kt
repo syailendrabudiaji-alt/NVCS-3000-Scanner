@@ -1,7 +1,7 @@
 package com.nvcs3000.scanner
 
 import android.Manifest
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
