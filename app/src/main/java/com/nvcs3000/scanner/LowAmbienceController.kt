@@ -6,7 +6,7 @@ import android.media.MediaPlayer
 import android.view.animation.DecelerateInterpolator
 
 class LowAmbienceController(
-    private val getPlayer: () -> MediaPlayer?,
+    private val getPlayers: () -> List<MediaPlayer?>,
     private val onModeChanged: ((Boolean) -> Unit)? = null
 ) {
     companion object {
@@ -19,7 +19,7 @@ class LowAmbienceController(
     var enabled: Boolean = false
         private set
 
-    private var animator: ValueAnimator? = null
+    private val animators = mutableListOf<ValueAnimator>()
 
     fun toggle(): Boolean {
         setEnabled(!enabled)
@@ -29,38 +29,61 @@ class LowAmbienceController(
     fun setEnabled(value: Boolean) {
         if (enabled == value) return
         enabled = value
-        fadeTo(if (enabled) LOW_VOLUME else NORMAL_VOLUME)
-        onModeChanged?.invoke(enabled)
+        fadeAllTo(if (value) LOW_VOLUME else NORMAL_VOLUME)
+        onModeChanged?.invoke(value)
     }
 
-    private fun fadeTo(target: Float) {
-        animator?.cancel()
-        val player = getPlayer() ?: return
-
-        val start = if (enabled) NORMAL_VOLUME else LOW_VOLUME
-
-        animator = ValueAnimator.ofFloat(start, target).apply {
-            duration = FADE_DURATION_MS
-            interpolator = DecelerateInterpolator()
-            addUpdateListener { animation ->
-                val volume = animation.animatedValue as Float
-                try {
-                    player.setVolume(volume, volume)
-                } catch (_: IllegalStateException) {
-                    // The player may have been released.
-                }
+    fun syncPlayers() {
+        val target = if (enabled) LOW_VOLUME else NORMAL_VOLUME
+        getPlayers().filterNotNull().forEach { player ->
+            try {
+                player.setVolume(target, target)
+            } catch (_: Exception) {
+                // Ignore released or unavailable players.
             }
-            start()
+        }
+    }
+
+    private fun fadeAllTo(target: Float) {
+        animators.forEach { it.cancel() }
+        animators.clear()
+
+        getPlayers().filterNotNull().forEach { player ->
+            try {
+                val start = if (enabled) NORMAL_VOLUME else LOW_VOLUME
+
+                val animator = ValueAnimator.ofFloat(start, target).apply {
+                    duration = FADE_DURATION_MS
+                    interpolator = DecelerateInterpolator()
+
+                    addUpdateListener { animation ->
+                        val volume = animation.animatedValue as Float
+                        try {
+                            player.setVolume(volume, volume)
+                        } catch (_: Exception) {
+                            cancel()
+                        }
+                    }
+                }
+
+                animators.add(animator)
+                animator.start()
+            } catch (_: Exception) {
+                // One failed player must not stop the other.
+            }
         }
     }
 
     fun stopAndReset() {
-        animator?.cancel()
-        animator = null
+        animators.forEach { it.cancel() }
+        animators.clear()
         enabled = false
-        try {
-            getPlayer()?.setVolume(NORMAL_VOLUME, NORMAL_VOLUME)
-        } catch (_: Exception) {
+
+        getPlayers().filterNotNull().forEach { player ->
+            try {
+                player.setVolume(NORMAL_VOLUME, NORMAL_VOLUME)
+            } catch (_: Exception) {
+            }
         }
     }
 }
