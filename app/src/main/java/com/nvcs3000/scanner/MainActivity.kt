@@ -158,6 +158,7 @@ class MainActivity : ComponentActivity() {
 
     status.text = error.toString()
 }
+}
 
     private fun startCamera() {
         val providerFuture =
