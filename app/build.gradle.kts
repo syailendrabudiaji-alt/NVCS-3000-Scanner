@@ -38,4 +38,6 @@ implementation("androidx.camera:camera-view:$cameraXVersion")
 // On-device machine-learning inference
 implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
 
+implementation("androidx.activity:activity-ktx:1.10.1")
+
 }
