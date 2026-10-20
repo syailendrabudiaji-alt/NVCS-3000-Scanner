@@ -34,7 +34,7 @@ jobs:
         run: |
           mkdir -p app/src/main/assets
           curl -fL --retry 3 \
-            "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite" \
+            "https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/object_detection/rpi/lite-model_efficientdet_lite0_detection_metadata_1.tflite" \
             -o app/src/main/assets/efficientdet-lite0.tflite
           test -s app/src/main/assets/efficientdet-lite0.tflite
 
