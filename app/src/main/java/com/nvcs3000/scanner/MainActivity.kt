@@ -142,10 +142,22 @@ class MainActivity : ComponentActivity() {
             startCamera()
 
         } catch (e: Exception) {
-            status.text =
-                "MODEL LOAD FAILED\n${e.localizedMessage ?: "Unknown error"}"
-        }
+    val error = StringBuilder("MODEL LOAD FAILED")
+    var cause: Throwable? = e
+    var level = 0
+
+    while (cause != null && level < 6) {
+        error.append("\n\n")
+        error.append(cause.javaClass.name)
+        error.append("\n")
+        error.append(cause.message ?: "No message")
+
+        cause = cause.cause
+        level++
     }
+
+    status.text = error.toString()
+}
 
     private fun startCamera() {
         val providerFuture =
