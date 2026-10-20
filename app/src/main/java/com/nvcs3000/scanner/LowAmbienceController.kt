@@ -1,4 +1,3 @@
-
 package com.nvcs3000.scanner
 
 import android.animation.ValueAnimator
@@ -28,6 +27,7 @@ class LowAmbienceController(
 
     fun setEnabled(value: Boolean) {
         if (enabled == value) return
+
         enabled = value
         fadeAllTo(if (value) LOW_VOLUME else NORMAL_VOLUME)
         onModeChanged?.invoke(value)
@@ -35,11 +35,11 @@ class LowAmbienceController(
 
     fun syncPlayers() {
         val target = if (enabled) LOW_VOLUME else NORMAL_VOLUME
+
         getPlayers().filterNotNull().forEach { player ->
             try {
                 player.setVolume(target, target)
             } catch (_: Exception) {
-                // Ignore released or unavailable players.
             }
         }
     }
@@ -58,6 +58,7 @@ class LowAmbienceController(
 
                     addUpdateListener { animation ->
                         val volume = animation.animatedValue as Float
+
                         try {
                             player.setVolume(volume, volume)
                         } catch (_: Exception) {
@@ -69,7 +70,6 @@ class LowAmbienceController(
                 animators.add(animator)
                 animator.start()
             } catch (_: Exception) {
-                // One failed player must not stop the other.
             }
         }
     }
@@ -85,5 +85,7 @@ class LowAmbienceController(
             } catch (_: Exception) {
             }
         }
+
+        onModeChanged?.invoke(false)
     }
 }
