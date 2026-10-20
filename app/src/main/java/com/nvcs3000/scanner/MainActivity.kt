@@ -1046,9 +1046,18 @@ class MainActivity : ComponentActivity() {
         )
         column.addView(header)
 
-        // Power
+                // Power
         powerButton = makeButton("POWER: OFF") { togglePower() }
         column.addView(powerButton, rowParams())
+
+        // Low ambience audio control
+        lowAmbienceButton = makeButton(
+            if (lowAmbienceController.enabled) "LOW AMBIENCE: ON"
+            else "LOW AMBIENCE: OFF"
+        ) {
+            lowAmbienceController.toggle()
+        }
+        column.addView(lowAmbienceButton, rowParams())
 
         // Modules
         for (m in Module.values()) {
