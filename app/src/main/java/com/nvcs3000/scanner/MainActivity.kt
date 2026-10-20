@@ -795,6 +795,12 @@ class MainActivity : ComponentActivity() {
                     return
                 }
             }
+            ambience?.setVolume(
+                if (lowAmbienceController.enabled) LowAmbienceController.LOW_VOLUME
+                else LowAmbienceController.NORMAL_VOLUME,
+                if (lowAmbienceController.enabled) LowAmbienceController.LOW_VOLUME
+                else LowAmbienceController.NORMAL_VOLUME
+            )
             ambience?.let { if (!it.isPlaying) it.start() }
         } catch (e: Throwable) {
             Log.w(TAG, "Ambience start failed", e)
