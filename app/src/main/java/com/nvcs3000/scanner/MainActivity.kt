@@ -19,6 +19,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.task.vision.detector.ObjectDetector
 import java.util.concurrent.ExecutorService
@@ -55,7 +56,13 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
         }
 
-        root.addView(title)
+        root.addView(
+            title,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
 
         val subtitle = TextView(this).apply {
             text = "NEURAL VISUAL CLASSIFICATION SYSTEM"
@@ -136,7 +143,7 @@ class MainActivity : Activity() {
 
         } catch (e: Exception) {
             status.text =
-                "MODEL LOAD FAILED\n${e.localizedMessage}"
+                "MODEL LOAD FAILED\n${e.localizedMessage ?: "Unknown error"}"
         }
     }
 
@@ -151,8 +158,8 @@ class MainActivity : Activity() {
 
                 val preview = Preview.Builder()
                     .build()
-                    .also {
-                        it.setSurfaceProvider(
+                    .also { previewUseCase ->
+                        previewUseCase.setSurfaceProvider(
                             previewView.surfaceProvider
                         )
                     }
@@ -174,7 +181,8 @@ class MainActivity : Activity() {
                     } catch (e: Exception) {
                         runOnUiThread {
                             status.text =
-                                "DETECTION ERROR\n${e.localizedMessage}"
+                                "DETECTION ERROR\n" +
+                                (e.localizedMessage ?: "Unknown error")
                         }
                     } finally {
                         imageProxy.close()
@@ -183,30 +191,35 @@ class MainActivity : Activity() {
 
                 cameraProvider.unbindAll()
 
+                // Explicitly specify the lifecycle owner.
+                val lifecycleOwner: LifecycleOwner = this@MainActivity
+
                 cameraProvider.bindToLifecycle(
-                    this,
+                    lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     preview,
                     analysis
                 )
 
-                status.text =
-                    "CAMERA ACTIVE\nLooking for objects..."
+                status.text = "CAMERA ACTIVE\nLooking for objects..."
 
             } catch (e: Exception) {
-                status.text =
-                    "CAMERA START FAILED\n${e.localizedMessage}"
+                runOnUiThread {
+                    status.text =
+                        "CAMERA START FAILED\n" +
+                        (e.localizedMessage ?: "Unknown error")
+                }
             }
 
         }, ContextCompat.getMainExecutor(this))
     }
 
     private fun analyzeFrame(imageProxy: ImageProxy) {
-
         val activeDetector = detector ?: return
 
         val now = System.currentTimeMillis()
 
+        // Limit detection frequency to reduce phone workload.
         if (now - lastUpdateTime < 250) {
             return
         }
@@ -217,28 +230,27 @@ class MainActivity : Activity() {
 
         val rotation = imageProxy.imageInfo.rotationDegrees
 
-        val rotatedBitmap =
-            if (rotation == 0) {
-                bitmap
-            } else {
-                val matrix = Matrix().apply {
-                    postRotate(rotation.toFloat())
-                }
+        val rotatedBitmap = if (rotation == 0) {
+            bitmap
+        } else {
+            val matrix = Matrix().apply {
+                postRotate(rotation.toFloat())
+            }
 
-                Bitmap.createBitmap(
-                    bitmap,
-                    0,
-                    0,
-                    bitmap.width,
-                    bitmap.height,
-                    matrix,
-                    true
-                ).also {
-                    if (it !== bitmap) {
-                        bitmap.recycle()
-                    }
+            Bitmap.createBitmap(
+                bitmap,
+                0,
+                0,
+                bitmap.width,
+                bitmap.height,
+                matrix,
+                true
+            ).also { rotated ->
+                if (rotated !== bitmap) {
+                    bitmap.recycle()
                 }
             }
+        }
 
         try {
             val results = activeDetector.detect(
@@ -248,22 +260,22 @@ class MainActivity : Activity() {
             val lines = results
                 .flatMap { detection ->
                     detection.categories.map { category ->
-                        "${category.label}: " +
-                            "${(category.score * 100).toInt()}%"
+                        val label = category.label
+                            .ifBlank { "Unknown object" }
+
+                        "$label: ${(category.score * 100).toInt()}%"
                     }
                 }
                 .distinct()
                 .take(8)
 
             runOnUiThread {
-
-                status.text =
-                    if (lines.isEmpty()) {
-                        "SCANNING LIVE\nNo recognized objects detected."
-                    } else {
-                        "OBJECTS DETECTED: ${lines.size}\n" +
-                            lines.joinToString("\n")
-                    }
+                status.text = if (lines.isEmpty()) {
+                    "SCANNING LIVE\nNo recognized objects detected."
+                } else {
+                    "OBJECTS DETECTED: ${lines.size}\n" +
+                    lines.joinToString("\n")
+                }
             }
 
         } finally {
@@ -271,12 +283,9 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun rgbaImageToBitmap(
-        image: ImageProxy
-    ): Bitmap {
-
+    private fun rgbaImageToBitmap(image: ImageProxy): Bitmap {
         val plane = image.planes[0]
-        val buffer = plane.buffer
+        val buffer = plane.buffer.duplicate()
 
         val pixelStride = plane.pixelStride
         val rowStride = plane.rowStride
@@ -286,30 +295,24 @@ class MainActivity : Activity() {
 
         val pixels = IntArray(width * height)
 
+        val bufferStart = buffer.position()
+
         for (y in 0 until height) {
-            val rowStart = y * rowStride
+            val rowStart = bufferStart + y * rowStride
 
             for (x in 0 until width) {
+                val index = rowStart + x * pixelStride
 
-                val index =
-                    rowStart + x * pixelStride
-
-                val r =
-                    buffer.get(index).toInt() and 0xFF
-
-                val g =
-                    buffer.get(index + 1).toInt() and 0xFF
-
-                val b =
-                    buffer.get(index + 2).toInt() and 0xFF
-
-                val a =
-                    buffer.get(index + 3).toInt() and 0xFF
+                val r = buffer.get(index).toInt() and 0xFF
+                val g = buffer.get(index + 1).toInt() and 0xFF
+                val b = buffer.get(index + 2).toInt() and 0xFF
+                val a = buffer.get(index + 3).toInt() and 0xFF
 
                 pixels[y * width + x] =
                     (a shl 24) or
                     (r shl 16) or
-                    (g shl 8) or b
+                    (g shl 8) or
+                    b
             }
         }
 
@@ -317,8 +320,8 @@ class MainActivity : Activity() {
             width,
             height,
             Bitmap.Config.ARGB_8888
-        ).also {
-            it.setPixels(
+        ).also { result ->
+            result.setPixels(
                 pixels,
                 0,
                 width,
@@ -342,11 +345,9 @@ class MainActivity : Activity() {
         )
 
         if (requestCode == CAMERA_REQUEST) {
-
             if (
                 grantResults.isNotEmpty() &&
-                grantResults[0] ==
-                PackageManager.PERMISSION_GRANTED
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
             ) {
                 initializeDetectorAndCamera()
             } else {
