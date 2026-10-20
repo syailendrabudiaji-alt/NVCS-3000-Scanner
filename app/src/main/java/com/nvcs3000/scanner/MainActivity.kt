@@ -25,7 +25,7 @@ import org.tensorflow.lite.task.vision.detector.ObjectDetector
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
 
     private lateinit var status: TextView
     private lateinit var previewView: PreviewView
