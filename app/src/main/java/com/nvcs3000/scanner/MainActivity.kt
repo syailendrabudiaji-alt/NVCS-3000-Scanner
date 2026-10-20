@@ -148,6 +148,23 @@ class MainActivity : ComponentActivity() {
     // ---------- Audio / static image (main thread only) ----------
     private var ambience: MediaPlayer? = null
     private var ambienceFailed = false
+    private var lowAmbienceButton: Button? = null
+
+    private val lowAmbienceController by lazy {
+        LowAmbienceController(
+            getPlayer = { ambience },
+            onModeChanged = { enabled ->
+                lowAmbienceButton?.text =
+                    if (enabled) "LOW AMBIENCE: ON"
+                    else "LOW AMBIENCE: OFF"
+    
+                showMessage(
+                    if (enabled) "LOW AMBIENCE ENABLED"
+                    else "LOW AMBIENCE DISABLED"
+                )
+            }
+        )
+    }
     private val oneShots = HashSet<MediaPlayer>()
     private var staticBitmap: Bitmap? = null
     private var staticLoadTried = false
