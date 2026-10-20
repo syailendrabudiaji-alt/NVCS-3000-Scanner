@@ -1,7 +1,6 @@
 package com.nvcs3000.scanner
 
 import android.Manifest
-import androidx.activity.ComponentActivity
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -9,9 +8,14 @@ import android.graphics.Matrix
 import android.os.Bundle
 import android.util.Size
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+
+import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -20,19 +24,38 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.task.vision.detector.ObjectDetector
+
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
 
+    // ==========================================
+    // NVCS 3000 VARIABLES
+    // ==========================================
+
     private lateinit var status: TextView
     private lateinit var previewView: PreviewView
     private lateinit var cameraExecutor: ExecutorService
+    private lateinit var modulePanel: LinearLayout
+    private lateinit var powerButton: Button
 
+    @Volatile
+    private var scannerPowered = true
+
+    @Volatile
+    private var selectedModule = "Human Detector"
+
+    private var menuVisible = false
     private var detector: ObjectDetector? = null
     private var lastUpdateTime = 0L
+
+    // ==========================================
+    // APPLICATION START
+    // ==========================================
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,10 +68,11 @@ class MainActivity : ComponentActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(18, 24, 18, 20)
+            setPadding(18, 16, 18, 12)
             setBackgroundColor(Color.rgb(8, 10, 14))
         }
 
+        // NVCS TITLE
         val title = TextView(this).apply {
             text = "N V C S   3 0 0 0"
             textSize = 27f
@@ -64,15 +88,20 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        // SUBTITLE
         val subtitle = TextView(this).apply {
             text = "NEURAL VISUAL CLASSIFICATION SYSTEM"
             textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(150, 220, 255))
-            setPadding(0, 8, 0, 18)
+            setPadding(0, 8, 0, 14)
         }
 
         root.addView(subtitle)
+
+        // ======================================
+        // CAMERA PREVIEW
+        // ======================================
 
         previewView = PreviewView(this).apply {
             implementationMode =
@@ -88,12 +117,16 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        // ======================================
+        // STATUS DISPLAY
+        // ======================================
+
         status = TextView(this).apply {
             text = "SYSTEM INITIALIZING..."
             textSize = 14f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setPadding(4, 18, 4, 8)
+            setPadding(4, 12, 4, 8)
         }
 
         root.addView(
@@ -104,12 +137,139 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        // ======================================
+        // TOUCHSCREEN CONTROLS
+        // ======================================
+
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        powerButton = Button(this).apply {
+            text = "POWER"
+
+            setOnClickListener {
+                scannerPowered = !scannerPowered
+
+                text = if (scannerPowered) {
+                    "POWER"
+                } else {
+                    "POWER ON"
+                }
+
+                status.text = if (scannerPowered) {
+                    "NVCS 3000 ONLINE\nModule: $selectedModule"
+                } else {
+                    "NVCS 3000 PAUSED"
+                }
+            }
+        }
+
+        val interactButton = Button(this).apply {
+            text = "INTERACT"
+
+            setOnClickListener {
+                menuVisible = !menuVisible
+
+                modulePanel.visibility =
+                    if (menuVisible) View.VISIBLE else View.GONE
+            }
+        }
+
+        controls.addView(
+            powerButton,
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        controls.addView(
+            interactButton,
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        root.addView(controls)
+
+        // ======================================
+        // MODULE MENU
+        // ======================================
+
+        modulePanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+
+            setPadding(8, 8, 8, 8)
+            setBackgroundColor(Color.rgb(18, 24, 32))
+        }
+
+        val moduleScroll = ScrollView(this)
+
+        val moduleList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        // Modules currently implemented in this version.
+        val moduleNames = listOf(
+            "Human Detector",
+            "Object Detector"
+        )
+
+        moduleNames.forEach { moduleName ->
+
+            val moduleButton = Button(this).apply {
+                text = moduleName
+
+                setOnClickListener {
+                    selectedModule = moduleName
+
+                    menuVisible = false
+                    modulePanel.visibility = View.GONE
+
+                    status.text =
+                        "MODULE SELECTED\n$selectedModule"
+                }
+            }
+
+            moduleList.addView(
+                moduleButton,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        moduleScroll.addView(moduleList)
+
+        modulePanel.addView(
+            moduleScroll,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                140
+            )
+        )
+
+        root.addView(modulePanel)
+
+        // SHOW APPLICATION
         setContentView(root)
 
         checkCameraPermission()
     }
 
+    // ==========================================
+    // CAMERA PERMISSION
+    // ==========================================
+
     private fun checkCameraPermission() {
+
         if (
             checkSelfPermission(Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
@@ -123,7 +283,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ==========================================
+    // LOAD AI MODEL
+    // ==========================================
+
     private fun initializeDetectorAndCamera() {
+
         try {
             val options =
                 ObjectDetector.ObjectDetectorOptions.builder()
@@ -137,30 +302,36 @@ class MainActivity : ComponentActivity() {
                 options
             )
 
-            status.text = "MODEL LOADED\nStarting camera..."
+            status.text = "AI MODEL LOADED\nStarting camera..."
 
             startCamera()
 
         } catch (e: Exception) {
-    val error = StringBuilder("MODEL LOAD FAILED")
-    var cause: Throwable? = e
-    var level = 0
 
-    while (cause != null && level < 6) {
-        error.append("\n\n")
-        error.append(cause.javaClass.name)
-        error.append("\n")
-        error.append(cause.message ?: "No message")
+            val error = StringBuilder("MODEL LOAD FAILED")
+            var cause: Throwable? = e
+            var level = 0
 
-        cause = cause.cause
-        level++
+            while (cause != null && level < 6) {
+                error.append("\n\n")
+                error.append(cause.javaClass.name)
+                error.append("\n")
+                error.append(cause.message ?: "No message")
+
+                cause = cause.cause
+                level++
+            }
+
+            status.text = error.toString()
+        }
     }
 
-    status.text = error.toString()
-}
-}
+    // ==========================================
+    // START CAMERA
+    // ==========================================
 
     private fun startCamera() {
+
         val providerFuture =
             ProcessCameraProvider.getInstance(this)
 
@@ -171,8 +342,8 @@ class MainActivity : ComponentActivity() {
 
                 val preview = Preview.Builder()
                     .build()
-                    .also { previewUseCase ->
-                        previewUseCase.setSurfaceProvider(
+                    .also {
+                        it.setSurfaceProvider(
                             previewView.surfaceProvider
                         )
                     }
@@ -191,12 +362,15 @@ class MainActivity : ComponentActivity() {
 
                     try {
                         analyzeFrame(imageProxy)
+
                     } catch (e: Exception) {
+
                         runOnUiThread {
                             status.text =
                                 "DETECTION ERROR\n" +
                                 (e.localizedMessage ?: "Unknown error")
                         }
+
                     } finally {
                         imageProxy.close()
                     }
@@ -204,8 +378,8 @@ class MainActivity : ComponentActivity() {
 
                 cameraProvider.unbindAll()
 
-                // Explicitly specify the lifecycle owner.
-                val lifecycleOwner: LifecycleOwner = this@MainActivity
+                val lifecycleOwner: LifecycleOwner =
+                    this@MainActivity
 
                 cameraProvider.bindToLifecycle(
                     lifecycleOwner,
@@ -214,9 +388,10 @@ class MainActivity : ComponentActivity() {
                     analysis
                 )
 
-                status.text = "CAMERA ACTIVE\nLooking for objects..."
+                status.text = "CAMERA ACTIVE\nInitializing scanner..."
 
             } catch (e: Exception) {
+
                 runOnUiThread {
                     status.text =
                         "CAMERA START FAILED\n" +
@@ -227,12 +402,22 @@ class MainActivity : ComponentActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    // ==========================================
+    // AI IMAGE ANALYSIS
+    // ==========================================
+
     private fun analyzeFrame(imageProxy: ImageProxy) {
+
+        // Pause AI analysis when the scanner is powered off.
+        if (!scannerPowered) {
+            return
+        }
+
         val activeDetector = detector ?: return
 
         val now = System.currentTimeMillis()
 
-        // Limit detection frequency to reduce phone workload.
+        // Limit processing to reduce phone workload.
         if (now - lastUpdateTime < 250) {
             return
         }
@@ -270,24 +455,66 @@ class MainActivity : ComponentActivity() {
                 TensorImage.fromBitmap(rotatedBitmap)
             )
 
-            val lines = results
+            val detectedObjects = results
                 .flatMap { detection ->
                     detection.categories.map { category ->
+
                         val label = category.label
                             .ifBlank { "Unknown object" }
 
-                        "$label: ${(category.score * 100).toInt()}%"
+                        val confidence =
+                            (category.score * 100).toInt()
+
+                        "$label: $confidence%"
                     }
                 }
                 .distinct()
                 .take(8)
 
+            // ==================================
+            // SELECTED DETECTION MODE
+            // ==================================
+
+            val output = when (selectedModule) {
+
+                "Human Detector" -> {
+
+                    val humans = detectedObjects.filter {
+                        val label = it.substringBefore(":")
+                            .trim()
+                            .lowercase()
+
+                        label == "person" ||
+                        label == "people" ||
+                        label == "human"
+                    }
+
+                    if (humans.isEmpty()) {
+                        "HUMAN DETECTOR\nNo person recognized."
+                    } else {
+                        "HUMANS DETECTED: ${humans.size}\n" +
+                            humans.joinToString("\n")
+                    }
+                }
+
+                "Object Detector" -> {
+
+                    if (detectedObjects.isEmpty()) {
+                        "OBJECT DETECTOR\nNo recognized objects."
+                    } else {
+                        "OBJECTS DETECTED: ${detectedObjects.size}\n" +
+                            detectedObjects.joinToString("\n")
+                    }
+                }
+
+                else -> "UNKNOWN MODULE"
+            }
+
             runOnUiThread {
-                status.text = if (lines.isEmpty()) {
-                    "SCANNING LIVE\nNo recognized objects detected."
-                } else {
-                    "OBJECTS DETECTED: ${lines.size}\n" +
-                    lines.joinToString("\n")
+
+                if (scannerPowered) {
+                    status.text =
+                        "NVCS 3000 ONLINE\n$output"
                 }
             }
 
@@ -296,7 +523,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun rgbaImageToBitmap(image: ImageProxy): Bitmap {
+    // ==========================================
+    // CAMERA IMAGE CONVERSION
+    // ==========================================
+
+    private fun rgbaImageToBitmap(
+        image: ImageProxy
+    ): Bitmap {
+
         val plane = image.planes[0]
         val buffer = plane.buffer.duplicate()
 
@@ -311,9 +545,11 @@ class MainActivity : ComponentActivity() {
         val bufferStart = buffer.position()
 
         for (y in 0 until height) {
+
             val rowStart = bufferStart + y * rowStride
 
             for (x in 0 until width) {
+
                 val index = rowStart + x * pixelStride
 
                 val r = buffer.get(index).toInt() and 0xFF
@@ -334,6 +570,7 @@ class MainActivity : ComponentActivity() {
             height,
             Bitmap.Config.ARGB_8888
         ).also { result ->
+
             result.setPixels(
                 pixels,
                 0,
@@ -346,11 +583,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ==========================================
+    // HANDLE PERMISSION RESULT
+    // ==========================================
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
         grantResults: IntArray
     ) {
+
         super.onRequestPermissionsResult(
             requestCode,
             permissions,
@@ -358,11 +600,13 @@ class MainActivity : ComponentActivity() {
         )
 
         if (requestCode == CAMERA_REQUEST) {
+
             if (
                 grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             ) {
                 initializeDetectorAndCamera()
+
             } else {
                 status.text =
                     "CAMERA ACCESS DENIED\n" +
@@ -371,7 +615,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ==========================================
+    // CLEANUP
+    // ==========================================
+
     override fun onDestroy() {
+
         super.onDestroy()
 
         detector?.close()
