@@ -14,6 +14,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
@@ -632,5 +635,91 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val CAMERA_REQUEST = 3000
+    }
+}
+
+private class BatteryIndicatorView(
+    context: android.content.Context
+) : View(context) {
+
+    private val shellPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f
+        color = Color.rgb(117, 245, 165)
+    }
+
+    private val litPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(117, 245, 165)
+    }
+
+    private val unlitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(25, 42, 32)
+    }
+
+    private val holePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(8, 10, 14)
+    }
+
+    private var batteryLevel = 100f
+
+    fun setLevel(level: Float) {
+        batteryLevel = level.coerceIn(0f, 100f)
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+
+        val shell = RectF(
+            12f, 10f, width - 18f, height - 10f
+        )
+
+        // Outer battery shell
+        canvas.drawRoundRect(shell, 5f, 5f, shellPaint)
+
+        // Battery terminal
+        canvas.drawRoundRect(
+            RectF(
+                width - 18f,
+                height * 0.36f,
+                width - 8f,
+                height * 0.64f
+            ),
+            2f, 2f, litPaint
+        )
+
+        // Four separate battery chunks
+        val left = shell.left + 7f
+        val right = shell.right - 7f
+        val top = shell.top + 7f
+        val bottom = shell.bottom - 7f
+        val gap = 3f
+        val chunkWidth = (right - left - gap * 3) / 4f
+        val litChunks = kotlin.math.ceil(
+            batteryLevel / 25f
+        ).toInt().coerceIn(0, 4)
+
+        for (i in 0 until 4) {
+            val x = left + i * (chunkWidth + gap)
+
+            canvas.drawRoundRect(
+                RectF(x, top, x + chunkWidth, bottom),
+                2f,
+                2f,
+                if (i < litChunks) litPaint else unlitPaint
+            )
+        }
+
+        // Hollow square in the center
+        val holeSize = (bottom - top) * 0.55f
+        val hole = RectF(
+            width / 2f - holeSize / 2f,
+            height / 2f - holeSize / 2f,
+            width / 2f + holeSize / 2f,
+            height / 2f + holeSize / 2f
+        )
+
+        canvas.drawRect(hole, holePaint)
+        canvas.drawRect(hole, shellPaint)
     }
 }
