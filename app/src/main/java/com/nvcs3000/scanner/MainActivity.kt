@@ -123,7 +123,7 @@ class MainActivity : ComponentActivity() {
         OVERLOAD_PROTECTION("Overload Protection", true),
         TRACK_HISTORY("Track History", true),
         MINIMAL_HUD("Minimal HUD", true),
-        LIDAR_2("LIDAR 2.0 â€” Point Cloud", true),
+        LIDAR_2("LIDAR 2.0 Ã¢â‚¬â€ Point Cloud", true),
         SURFACE_RECONSTRUCTION("Surface Reconstruction", true),
         MULTI_PASS_SCAN("Multi-Pass Scan", true),
         PIXEL_INSPECTOR("Pixel Inspector", true),
@@ -187,13 +187,14 @@ class MainActivity : ComponentActivity() {
 
     // ---------- Audio / static image (main thread only) ----------
     private var ambience: MediaPlayer? = null
+    private var staticAmbience: MediaPlayer? = null
     private var ambienceFailed = false
     private var lowAmbienceButton: Button? = null
     private var staticAnimator: ValueAnimator? = null
 
     private val lowAmbienceController by lazy {
         LowAmbienceController(
-            getPlayers = { listOf(ambience) },
+            getPlayers = { listOf(ambience, staticAmbience) },
             onModeChanged = { enabled ->
                 lowAmbienceButton?.text =
                     if (enabled) "LOW AMBIENCE: ON"
@@ -215,12 +216,31 @@ class MainActivity : ComponentActivity() {
         refreshHud()
     }
 
-    private val hideStatic = Runnable {
-        if (::staticView.isInitialized && !powerOn) {
-            staticView.alpha = 1f
-            staticView.visibility = View.GONE
+    // While powered on, vary static opacity every 120 ms. Alpha is the inverse
+    // of transparency: 60â€“90% transparent means 10â€“40% visible.
+    private val staticFlicker = object : Runnable {
+        override fun run() {
+            if (!::staticView.isInitialized || destroyed) return
+            if (powerOn && staticView.visibility == View.VISIBLE) {
+                staticView.alpha = 0.1f + Random.nextFloat() * 0.3f
+                mainHandler.postDelayed(this, 120L)
+            }
         }
+    }
+
+    private val hideStatic = Runnable {
         staticAnimator = null
+        if (::staticView.isInitialized) {
+            if (!powerOn) {
+                staticView.alpha = 1f
+                staticView.visibility = View.GONE
+                mainHandler.removeCallbacks(staticFlicker)
+            } else {
+                staticView.alpha = 0.1f + Random.nextFloat() * 0.3f
+                mainHandler.removeCallbacks(staticFlicker)
+                mainHandler.postDelayed(staticFlicker, 120L)
+            }
+        }
     }
 
     private val permissionLauncher =
@@ -281,11 +301,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        try {
-            ambience?.takeIf { it.isPlaying }?.pause()
-        } catch (e: Throwable) {
-            Log.w(TAG, "Ambience pause failed", e)
-        }
+        pauseAmbienceAtStart()
         super.onPause()
     }
 
@@ -295,6 +311,7 @@ class MainActivity : ComponentActivity() {
         mainHandler.removeCallbacksAndMessages(null)
         staticAnimator?.cancel()
         staticAnimator = null
+        mainHandler.removeCallbacks(staticFlicker)
 
         try {
             imageAnalysis?.clearAnalyzer()
@@ -326,6 +343,8 @@ class MainActivity : ComponentActivity() {
         oneShots.clear()
         safeRelease(ambience)
         ambience = null
+        safeRelease(staticAmbience)
+        staticAmbience = null
 
         try {
             aboutDialog?.dismiss()
@@ -372,12 +391,8 @@ class MainActivity : ComponentActivity() {
 
     private fun powerOffNow() {
         powerOn = false
+        stopAmbienceAtStart()
         playOnce(AUDIO_UNEQUIP)
-        try {
-            ambience?.takeIf { it.isPlaying }?.pause()
-        } catch (e: Throwable) {
-            Log.w(TAG, "Ambience pause failed", e)
-        }
         try {
             imageAnalysis?.clearAnalyzer()
         } catch (e: Throwable) {
@@ -834,27 +849,41 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startAmbience() {
-        if (destroyed || ambienceFailed) return
+        if (destroyed || ambienceFailed || !powerOn) return
         try {
-            if (ambience == null) {
-                ambience = createPlayer(AUDIO_AMBIENCE, true, 0.4f)
-                if (ambience == null) {
-                    ambienceFailed = true
-                    return
-                }
+            if (ambience == null) ambience = createPlayer(AUDIO_AMBIENCE, true, 0.4f)
+            if (staticAmbience == null) staticAmbience = createPlayer(AUDIO_STATIC, true, 0.4f)
+            if (ambience == null && staticAmbience == null) {
+                ambienceFailed = true
+                return
             }
             lowAmbienceController.syncPlayers()
-            ambience?.let { if (!it.isPlaying) it.start() }
+            listOf(ambience, staticAmbience).filterNotNull().forEach { player ->
+                if (!player.isPlaying) player.start()
+            }
         } catch (e: Throwable) {
             Log.w(TAG, "Ambience start failed", e)
-            safeRelease(ambience)
-            ambience = null
-            ambienceFailed = true
+            pauseAmbienceAtStart()
         }
     }
 
+    private fun pauseAmbienceAtStart() {
+        listOf(ambience, staticAmbience).filterNotNull().forEach { player ->
+            try {
+                if (player.isPlaying) player.pause()
+                player.seekTo(0)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Ambience pause failed", e)
+            }
+        }
+    }
+
+    private fun stopAmbienceAtStart() {
+        // Stop both ambience loops audibly and rewind them for the next power-on.
+        pauseAmbienceAtStart()
+    }
+
     private fun flashStatic() {
-        playOnce(AUDIO_STATIC, 0.6f)
         if (!staticLoadTried) {
             staticLoadTried = true
             staticBitmap = try {
@@ -875,6 +904,7 @@ class MainActivity : ComponentActivity() {
         if (staticBitmap == null || !::staticView.isInitialized) return
 
         mainHandler.removeCallbacks(hideStatic)
+        mainHandler.removeCallbacks(staticFlicker)
         staticAnimator?.cancel()
         staticAnimator = null
 
@@ -887,10 +917,10 @@ class MainActivity : ComponentActivity() {
         staticView.visibility = View.VISIBLE
         staticView.alpha = 1f
 
-        // While powered on, keep a visible green static overlay at randomized 0.60â€“0.90
-        // opacity. When powering off, fade the full-screen flash completely away.
+        // Begin fully visible, then fade to a random level. 60â€“90% transparency
+        // means Android alpha/visibility of 0.10â€“0.40. Power-off fades to zero.
         val targetAlpha = if (powerOn) {
-            0.6f + (Random.nextFloat() * 0.3f)
+            0.1f + (Random.nextFloat() * 0.3f)
         } else {
             0f
         }
